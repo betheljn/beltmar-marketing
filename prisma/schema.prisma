@@ -1,0 +1,400 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             Int            @id @default(autoincrement())
+  username       String         @unique
+  email          String         @unique @default("")
+  password       String
+  role           String         // 'admin', 'creator', 'collaborator', 'viewer'
+  status         String?        // 'active', 'banned', etc.
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt @default(now())
+
+  profile        Profile?
+  knots          Knot[]         @relation("KnotOwners")
+  campaigns      Campaign[]     @relation("CampaignOwners")
+  strategies     Strategy[]
+  suggestions    Suggestion[]
+  contents       Content[]      @relation("ContentOwners")
+  performances   Performance[]  @relation("PerformanceOwners")
+  payments       Payment[]
+  comments       Comment[]
+  notifications  Notification[]
+  sessions       UserSession[]
+  roles          RoleAssignment[]
+  growthMetrics  GrowthMetric[]
+  userBadges     UserBadge[]
+  eventLogs      EventLog[]
+  tasksAssigned  Task[]          @relation("TaskAssignments")
+  referralsMade  Referral[]      @relation("Referrer")
+  referralsReceived Referral[]   @relation("Referred")
+  organizationId  Int?
+  organization    Organization?  @relation("OrganizationUsers", fields: [organizationId], references: [id])
+  sentMessages    Message[]      @relation("MessageSender")
+  receivedMessages Message[]     @relation("MessageRecipient")
+  settings       UserSetting[]
+  reactions      Reaction[]
+}
+
+model Profile {
+  id               Int      @id @default(autoincrement())
+  userId           Int      @unique
+  name             String?
+  bio              String?
+  avatarUrl        String?
+  location         String?
+  company          String?
+  website          String?
+  jobTitle         String?
+  industry         String?
+  interests        String[] // Tags (marketing, SEO, content, etc.)
+  socialLinks      Json?    // { twitter, linkedin, github, etc. }
+
+  // Behavior data
+  lastActiveAt     DateTime?
+  preferredStyle   String?  // casual, formal, etc.
+  aiInteractionLog Json?    // Past queries/prompts for suggestions
+
+  user             User     @relation(fields: [userId], references: [id])
+}
+
+model RoleAssignment {
+  id       Int    @id @default(autoincrement())
+  userId   Int
+  role     String // granular control (e.g., 'knot.editor', 'campaign.viewer')
+
+  user     User   @relation(fields: [userId], references: [id])
+}
+
+model UserSession {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  device    String
+  ipAddress String?
+  location  String?
+  lastSeen  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model UserSetting {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  key       String
+  value     String
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Organization {
+  id        Int      @id @default(autoincrement())
+  name      String
+  domain    String?
+  createdAt DateTime @default(now())
+  users     User[] @relation("OrganizationUsers")
+}
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  type       String
+  message    String
+  isRead     Boolean  @default(false)
+  targetId   Int?
+  targetType String?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Knot {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  parentId    Int?
+  userId      Int
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  parent      Knot?     @relation("KnotHierarchy", fields: [parentId], references: [id])
+  subKnots    Knot[]    @relation("KnotHierarchy")
+  user        User      @relation("KnotOwners", fields: [userId], references: [id])
+
+  campaigns   Campaign[]
+  aiSettings  KnotAISetting[]
+  tasks       Task[]    @relation(fields: [], references: [])
+  products    Product[] @relation(fields: [], references: [])
+}
+
+model Campaign {
+  id           Int       @id @default(autoincrement())
+  knotId       Int?     
+  userId       Int
+
+  name         String    @default("")
+  description  String?
+  status       String?   // draft, live, completed
+  startDate    DateTime?
+  endDate      DateTime?
+  scheduledAt  DateTime? // for scheduling launches
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  knot         Knot?      @relation(fields: [knotId], references: [id])
+  user         User      @relation("CampaignOwners", fields: [userId], references: [id])
+
+  strategies   Strategy[]
+  contents     Content[]
+  performances Performance[]
+  suggestions  Suggestion[]
+}
+
+model Strategy {
+  id          Int      @id @default(autoincrement())
+  campaignId  Int      @default(0) 
+  userId      Int
+  title       String
+  details     String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Suggestion {
+  id          Int      @id @default(autoincrement())
+  campaignId  Int
+  userId      Int
+  title       String
+  content     String
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Performance {
+  id             Int      @id @default(autoincrement())
+  campaignId     Int
+  userId         Int      @default(0)
+  impressions    Int
+  clicks         Int
+  conversions    Int
+  engagement     Float
+  ctr            Float?
+  conversionRate Float?
+  reachEstimate  Int?
+  bounceRate     Float?
+  timeOnPageAvg  Float?
+  costPerClick   Float?
+  costPerAcquisition Float?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  campaign       Campaign @relation(fields: [campaignId], references: [id])
+  user           User     @relation("PerformanceOwners", fields: [userId], references: [id])
+}
+
+model Content {
+  id          Int      @id @default(autoincrement())
+  campaignId  Int
+  userId      Int
+  type        String   // 'post', 'ad', 'video', etc.
+  platform    String
+  content     String
+  scheduledAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  user        User     @relation("ContentOwners", fields: [userId], references: [id])
+  comments    Comment[]
+  attachments Attachment[]
+}
+
+model Comment {
+  id        Int       @id @default(autoincrement())
+  contentId Int
+  userId    Int
+  parentId  Int?
+  text      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  content   Content   @relation(fields: [contentId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+  parent    Comment?  @relation("ThreadedComment", fields: [parentId], references: [id])
+  replies   Comment[] @relation("ThreadedComment")
+  attachments Attachment[]
+  reactions Reaction[]
+}
+
+model Attachment {
+  id         Int      @id @default(autoincrement())
+  contentId  Int?
+  commentId  Int?
+  url        String
+  type       String   // 'image', 'video', 'pdf', etc.
+  metadata   Json?
+
+  content    Content? @relation(fields: [contentId], references: [id])
+  comment    Comment? @relation(fields: [commentId], references: [id])
+}
+
+model Payment {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  amount     Float
+  status     String   // 'pending', 'completed', 'failed'
+  method     String   // 'stripe', 'paypal', etc.
+  purpose    String   // 'subscription', 'unlock', etc.
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id])
+}
+
+model GrowthMetric {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  scoreType  String   // reputation, influence, loyalty
+  value      Float
+  source     String?  // referral, activity, badge
+  updatedAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+}
+model Badge {
+  id        Int     @id @default(autoincrement())
+  name      String
+  iconUrl   String
+  criteria  String
+  level     Int
+  metadata  Json?
+
+  userBadges UserBadge[]
+}
+
+model UserBadge {
+  id        Int     @id @default(autoincrement())
+  userId    Int
+  badgeId   Int
+  grantedAt DateTime @default(now())
+
+  user      User    @relation(fields: [userId], references: [id])
+  badge     Badge   @relation(fields: [badgeId], references: [id])
+}
+
+model KnotAISetting {
+  id          Int     @id @default(autoincrement())
+  knotId      Int
+  assistantName String @default("Belta")
+  tone        String? // Friendly, Professional, Analytical
+  summaryFreq String? // daily, weekly, realtime
+  moderation  Boolean @default(true)
+
+  knot        Knot    @relation(fields: [knotId], references: [id])
+}
+
+model Task {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  assignedTo  Int?
+  knotId      Int?
+  status      String   // pending, in_progress, done
+  dueDate     DateTime?
+
+  user        User?    @relation("TaskAssignments", fields: [assignedTo], references: [id])
+  knot        Knot?    @relation(fields: [knotId], references: [id])
+}
+
+model Referral {
+  id          Int     @id @default(autoincrement())
+  referrerId  Int
+  referredId  Int
+  type        String  // invite, content, product
+  reward      Float?
+  createdAt   DateTime @default(now())
+
+  referrer    User    @relation("Referrer", fields: [referrerId], references: [id])
+  referred    User    @relation("Referred", fields: [referredId], references: [id])
+}
+
+model EventLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  type      String   // 'campaign.updated', 'strategy.created', etc.
+  targetId  Int?
+  targetType String? // 'Campaign', 'Content', etc.
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Message {
+  id          Int      @id @default(autoincrement())
+  senderId    Int
+  recipientId Int?
+  groupId     Int?
+  content     String
+  createdAt   DateTime @default(now())
+
+  sender      User     @relation("MessageSender", fields: [senderId], references: [id])
+  recipient   User?    @relation("MessageRecipient", fields: [recipientId], references: [id])
+}
+
+model Product {
+  id         Int      @id @default(autoincrement())
+  knotId     Int
+  name       String
+  description String?
+  price      Float
+  imageUrl   String?
+  stock      Int?
+
+  knot       Knot     @relation(fields: [knotId], references: [id])
+}
+
+model Reaction {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  commentId Int
+  type      String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+  comment   Comment  @relation(fields: [commentId], references: [id])
+
+  @@unique([userId, commentId, type]) // Prevent duplicate reactions of same type
+}
+
+
+
+
+
+
+
+
+
