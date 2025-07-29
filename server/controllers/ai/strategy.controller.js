@@ -1,4 +1,4 @@
-import prisma from '../lib/prismaClient.js';
+import prisma from '../../lib/prismaClient.js';
 
 export const createStrategy = async (req, res) => {
   const { title, description, type } = req.body;

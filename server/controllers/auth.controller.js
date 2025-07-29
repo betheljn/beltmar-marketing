@@ -72,7 +72,20 @@ export const registerUser = async (req, res) => {
       }
     });
 
-    res.status(201).json({ message: 'User registered successfully.', userId: newUser.id });
+    const token = jwt.sign({ id: newUser.id, username: newUser.username }, SECRET, {
+      expiresIn: '7d'
+    });
+
+    res.status(201).json({
+      message: 'User registered successfully.',
+      token,
+      user: {
+        id: newUser.id,
+        username: newUser.username,
+        firstLogin: true,
+      }
+    });
+    
   } catch (error) {
     console.error('🔴 Registration error:', error);
     res.status(500).json({ message: 'Server error during registration.' });
@@ -82,13 +95,17 @@ export const registerUser = async (req, res) => {
 // ===== Login User =====
 export const loginUser = async (req, res) => {
   const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Username and password are required.' });
+  }
 
   try {
     const user = await prisma.user.findUnique({
       where: { username },
       include: {
         profile: true,
-        roles: true
+        roles: true,
+        sessions: true, // <-- Add this line
       }
     });
 
@@ -96,7 +113,6 @@ export const loginUser = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 
-    // Create session
     await prisma.userSession.create({
       data: {
         userId: user.id,
@@ -105,7 +121,6 @@ export const loginUser = async (req, res) => {
       }
     });
 
-    // Issue token
     const token = jwt.sign(
       {
         id: user.id,
@@ -118,6 +133,9 @@ export const loginUser = async (req, res) => {
       { expiresIn: '1d' }
     );
 
+    // Safeguard for sessions
+    const firstLogin = !user.sessions || user.sessions.length <= 1;
+
     res.status(200).json({
       token,
       user: {
@@ -126,7 +144,8 @@ export const loginUser = async (req, res) => {
         profile: user.profile,
         role: user.role,
         organizationId: user.organizationId,
-        roles: user.roles.map(r => r.role)
+        roles: user.roles.map(r => r.role),
+        firstLogin
       }
     });
   } catch (error) {

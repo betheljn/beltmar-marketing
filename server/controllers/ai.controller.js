@@ -9,17 +9,21 @@ import { logEvent } from '../utils/logEvent.js';
 // ===== 1. GENERATE SUGGESTION =====
 export const handleAIGenerate = async (req, res) => {
   try {
-    const { prompt, userId, campaignId, model } = req.body;
+    const { brand, topic, tone, goal, userId, campaignId } = req.body;
 
-    const response = await generateSuggestion(prompt, model || 'llama3');
+    if (!brand || !topic || !tone || !goal || !userId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const content = await generateSuggestion({ brand, topic, tone, goal });
 
     const suggestion = await prisma.suggestion.create({
       data: {
         campaignId,
         userId,
-        title: prompt.slice(0, 50) + '...',
-        content: response,
-      }
+        title: `${brand} - ${topic}`.slice(0, 50),
+        content: JSON.stringify(content, null, 2),
+      },
     });
 
     await logEvent({
@@ -27,52 +31,34 @@ export const handleAIGenerate = async (req, res) => {
       type: 'suggestion.created',
       targetId: suggestion.id,
       targetType: 'Suggestion',
-      metadata: { prompt }
+      metadata: { topic, tone, goal },
     });
 
-    res.json({ result: response, saved: suggestion });
+    res.json({ result: content, saved: suggestion });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'AI suggestion generation failed' });
   }
 };
 
-const buildStrategyPrompt = ({ brand, audience, product, goal }) => `
-You are a top-tier marketing strategist. 
-Create a complete digital marketing strategy for:
-
-Brand: ${brand}
-Target Audience: ${audience}
-Product/Service: ${product}
-Primary Goal: ${goal || 'Increase visibility and conversions'}
-
-Include:
-1. Campaign Concept
-2. Brand Positioning
-3. Messaging Strategy
-4. Channels (social, paid, email, etc.)
-5. Content Pillars
-6. KPIs and Success Metrics
-7. Engagement Tactics
-8. Timeline Overview
-`;
-
 // ===== 2. GENERATE STRATEGY =====
 export const handleAIStrategy = async (req, res) => {
   try {
-    const { brand, audience, product, goal, userId, campaignId, model } = req.body;
+    const { brand, audience, product, goal, userId, campaignId } = req.body;
 
-    const prompt = buildStrategyPrompt({ brand, audience, product, goal });
+    if (!brand || !audience || !product || !userId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
 
-    const response = await generateSuggestion(prompt, model || 'llama3');
+    const response = await generateStrategy({ brand, audience, product, goal });
 
     const strategy = await prisma.strategy.create({
       data: {
         campaignId,
         userId,
         title: `${brand} Strategy`,
-        details: response
-      }
+        details: response,
+      },
     });
 
     await logEvent({
@@ -80,7 +66,7 @@ export const handleAIStrategy = async (req, res) => {
       type: 'strategy.created',
       targetId: strategy.id,
       targetType: 'Strategy',
-      metadata: { brand, audience, goal }
+      metadata: { brand, audience, goal },
     });
 
     res.json({ result: response, saved: strategy });
@@ -94,7 +80,10 @@ export const handleAIStrategy = async (req, res) => {
 export const handleAIAnalyze = async (req, res) => {
   try {
     const { summaryData, userId, model } = req.body;
-    if (!summaryData || !userId) return res.status(400).json({ error: 'Missing summaryData or userId' });
+
+    if (!summaryData || !userId) {
+      return res.status(400).json({ error: 'Missing summaryData or userId' });
+    }
 
     const result = await analyzeCampaign(summaryData, model || 'mixtral');
 
@@ -102,8 +91,8 @@ export const handleAIAnalyze = async (req, res) => {
       data: {
         userId,
         title: 'Campaign Analysis',
-        content: result
-      }
+        content: result,
+      },
     });
 
     await logEvent({
@@ -111,7 +100,7 @@ export const handleAIAnalyze = async (req, res) => {
       type: 'campaign.analyzed',
       targetId: suggestion.id,
       targetType: 'Suggestion',
-      metadata: { summaryData }
+      metadata: { summaryData },
     });
 
     res.json({ result, saved: suggestion });
@@ -125,7 +114,10 @@ export const handleAIAnalyze = async (req, res) => {
 export const handleAISummarize = async (req, res) => {
   try {
     const { threadContent, userId, model } = req.body;
-    if (!threadContent || !userId) return res.status(400).json({ error: 'Missing threadContent or userId' });
+
+    if (!threadContent || !userId) {
+      return res.status(400).json({ error: 'Missing threadContent or userId' });
+    }
 
     const result = await summarizeThread(threadContent, model || 'mixtral');
 
@@ -133,8 +125,8 @@ export const handleAISummarize = async (req, res) => {
       data: {
         userId,
         title: 'Thread Summary',
-        content: result
-      }
+        content: result,
+      },
     });
 
     await logEvent({
@@ -142,7 +134,7 @@ export const handleAISummarize = async (req, res) => {
       type: 'thread.summarized',
       targetId: suggestion.id,
       targetType: 'Suggestion',
-      metadata: { threadContent }
+      metadata: { threadContent },
     });
 
     res.json({ result, saved: suggestion });
@@ -161,13 +153,13 @@ export const getSuggestionsByUser = async (req, res) => {
     const suggestions = await prisma.suggestion.findMany({
       where: {
         userId,
-        ...(type && { type }), // e.g., 'strategy', 'suggestion', 'summary'
+        ...(type && { type }),
         ...(model && { model }),
         ...(startDate && endDate && {
           createdAt: {
             gte: new Date(startDate),
-            lte: new Date(endDate)
-          }
+            lte: new Date(endDate),
+          },
         }),
       },
       orderBy: { createdAt: 'desc' },
@@ -180,6 +172,7 @@ export const getSuggestionsByUser = async (req, res) => {
   }
 };
 
+// ===== 6. VIEW HISTORY: By Campaign =====
 export const getSuggestionsByCampaign = async (req, res) => {
   try {
     const { campaignId } = req.params;
@@ -193,8 +186,8 @@ export const getSuggestionsByCampaign = async (req, res) => {
         ...(startDate && endDate && {
           createdAt: {
             gte: new Date(startDate),
-            lte: new Date(endDate)
-          }
+            lte: new Date(endDate),
+          },
         }),
       },
       orderBy: { createdAt: 'desc' },

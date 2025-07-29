@@ -1,5 +1,5 @@
 import express from 'express';
-import { createStrategy, getUserStrategies } from '../controllers/strategy.controller.js';
+import { createStrategy, getUserStrategies } from '../controllers/ai/strategy.controller.js';
 import authMiddleware from '../middleware/auth.middleware.js';
 
 const router = express.Router();

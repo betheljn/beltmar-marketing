@@ -1,4 +1,5 @@
-import fetch from 'node-fetch';
+// ai/summarize.js
+import { queryOllama } from '../lib/ollamaClient.js';
 
 export const summarizeThread = async (threadContent) => {
   const prompt = `
@@ -12,16 +13,6 @@ Include:
 - Suggested next post
 `;
 
-  const res = await fetch('http://localhost:11434/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama3.2:latest',
-      prompt,
-      stream: false,
-    }),
-  });
-
-  const data = await res.json();
-  return data.response;
+  const result = await queryOllama({ prompt, model: 'llama3.2:latest' });
+  return result;
 };

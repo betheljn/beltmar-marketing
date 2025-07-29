@@ -1,25 +1,7 @@
-// ai/analyze.js
+// ai/profileAnalysis.js
 import axios from 'axios';
-import { queryOllama } from '../lib/ollamaClient.js';
 
-export const analyzeCampaign = async (summaryData) => {
-  const prompt = `
-You're an expert marketing analyst. Analyze this campaign performance:
-
-${summaryData}
-
-Return:
-1. Performance breakdown
-2. Bottlenecks
-3. Opportunities for growth
-4. Key takeaways
-`;
-
-  const result = await queryOllama({ prompt, model: 'llama3.2:latest' });
-  return result;
-};
-
-export const analyzeProfile = async (profile) => {
+export const analyzeUserProfile = async (profile) => {
   const prompt = `
 You are a brand strategist AI. Analyze the following user profile and return key insights, tone guidance, potential audience matches, and content strategy ideas.
 

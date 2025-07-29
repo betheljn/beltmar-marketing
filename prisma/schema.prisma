@@ -50,6 +50,13 @@ model User {
   GroupMemberships  GroupMember[]
   sentGroupMessages GroupMessage[]   @relation("GroupMessageSender")
   groupMessageReads GroupMessageRead[]
+  agentTasks        AgentTask[]
+  onboarding Onboarding?
+  profileAnalysis ProfileAnalysis?
+  firstLogin Boolean @default(true)
+  twitterAccessToken String?
+  twitterAccessSecret String?
+  twitterConnected Boolean @default(false)
 }
 
 model Profile {
@@ -73,6 +80,15 @@ model Profile {
 
   user User @relation(fields: [userId], references: [id])
 }
+
+model ProfileAnalysis {
+  id      Int    @id @default(autoincrement())
+  userId  Int    @unique
+  summary String
+
+  user User @relation(fields: [userId], references: [id])
+}
+
 
 model RoleAssignment {
   id     Int    @id @default(autoincrement())
@@ -164,6 +180,7 @@ model Campaign {
   contents     Content[]
   performances Performance[]
   suggestions  Suggestion[]
+  agentTasks   AgentTask[]
 }
 
 model Strategy {
@@ -181,18 +198,18 @@ model Strategy {
 }
 
 model Suggestion {
-  id         Int    @id @default(autoincrement())
-  campaignId Int
+  id         Int       @id @default(autoincrement())
   userId     Int
+  campaignId Int?      // Make it optional with ?
   title      String
   content    String
+  type       String?
+  createdAt  DateTime  @default(now())
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  campaign Campaign @relation(fields: [campaignId], references: [id])
   user     User     @relation(fields: [userId], references: [id])
+  campaign Campaign? @relation(fields: [campaignId], references: [id])
 }
+
 
 model Performance {
   id                 Int    @id @default(autoincrement())
@@ -372,7 +389,7 @@ model GroupMember {
   id       Int      @id @default(autoincrement())
   userId   Int
   groupId  Int
-  role     String   @default("member") // 'admin' or 'member'
+  role     String // 'admin', 'member', 'guest'
   joinedAt DateTime @default(now())
 
   user  User  @relation(fields: [userId], references: [id])
@@ -442,3 +459,35 @@ model Reaction {
 
   @@unique([userId, commentId, type]) // Prevent duplicate reactions of same type
 }
+
+model AgentTask {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  campaignId Int?
+  type       String
+  status     String
+  input      Json
+  output     Json?
+  log        String?   // NEW: freeform debug or event log
+  retryCount Int       @default(0) // NEW
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id])
+  campaign Campaign? @relation(fields: [campaignId], references: [id])
+}
+
+model Onboarding {
+  id                  Int     @id @default(autoincrement())
+  userId              Int     @unique
+  user                User    @relation(fields: [userId], references: [id])
+  goals               String?
+  brandTone           String?
+  contentPreferences  String?
+  targetAudience      String?
+  competitors         String?
+  website             String?
+  enableAIAnalysis    Boolean @default(false)
+  enableTwitterAnalysis Boolean @default(false)
+}
+

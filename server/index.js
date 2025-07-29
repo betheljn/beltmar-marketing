@@ -4,6 +4,7 @@ import 'dotenv/config.js';
 import { Server } from 'socket.io';
 import http from 'http';
 import prisma from './lib/prismaClient.js';
+import session from 'express-session';
 
 // Routes
 import authRoutes from './routes/auth.route.js';
@@ -20,6 +21,17 @@ import notificationRoutes from './routes/notification.route.js';
 import messageRoutes from './routes/message.routes.js';
 import groupRoutes from './routes/group.route.js';
 import groupMessageRoutes from './routes/groupMessage.route.js';
+import agentRoutes from './routes/agent.route.js';
+import knotAiRoutes from './routes/knotAi.route.js';
+import badgeRoutes from './routes/badge.route.js';
+import taskRoutes from './routes/task.route.js';
+import productRoutes from './routes/product.route.js';
+import userSettingRoutes from './routes/userSetting.route.js';
+import userRoutes from './routes/user.route.js';
+import analyzeRoutes from './routes/analyze.route.js';
+import chatRoutes from './routes/chat.route.js';
+import twitterRoutes from './routes/twitter.routes.js';
+import profileRoutes from './routes/profile.route.js';
 
 const app = express();
 const PORT = 1000;
@@ -27,6 +39,17 @@ const PORT = 1000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'SuperSuperSecretSessionKey',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // set to true in production with HTTPS
+    httpOnly: true,
+    maxAge: 1000 * 60 * 60 * 24, // 1 day
+  }
+}));
 
 // Register routes
 app.use('/api/auth', authRoutes);
@@ -43,6 +66,18 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/group-messages', groupMessageRoutes);
+app.use('/api/agents', agentRoutes);
+app.use('/api/knot-ai', knotAiRoutes);
+app.use('/api/badges', badgeRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/user-settings', userSettingRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/analyze', analyzeRoutes);
+app.use('/api/ai', chatRoutes);
+app.use('/api/twitter', twitterRoutes);
+app.use('/api/profile', profileRoutes);
+
 
 // HTTP server + Socket.IO setup
 const server = http.createServer(app);
@@ -70,86 +105,107 @@ io.on('connection', (socket) => {
 
   console.log('🔌 Socket connected:', socket.id);
 
-  // Join group room
-socket.on('join-group', ({ groupId }) => {
-  socket.join(`group:${groupId}`);
-  console.log(`👥 User ${userId} joined group:${groupId}`);
-});
-
-// Send message to group
-socket.on('send-group-message', async ({ groupId, content }) => {
-  try {
-    const newMessage = await prisma.message.create({
-      data: {
-        senderId: userId,
-        groupId: Number(groupId),
-        content
-      }
-    });
-
-    io.to(`group:${groupId}`).emit('receive-group-message', newMessage);
-
-    console.log(`📢 Group ${groupId} message from ${userId}:`, content);
-  } catch (err) {
-    console.error('💥 Group message error:', err.message);
-  }
-});
-
-  // 📩 Handle sending message
+  // 📩 Direct message
   socket.on('send-message', async ({ recipientId, content }) => {
     try {
-      if (!recipientId || !content) {
-        return socket.emit('error', { message: 'Missing recipientId or content' });
-      }
-
       const newMessage = await prisma.message.create({
         data: {
           senderId: userId,
           recipientId: Number(recipientId),
-          content
-        }
+          content,
+        },
       });
 
-      // Emit to both sender and recipient
       socket.emit('receive-message', newMessage);
       io.to(`user:${recipientId}`).emit('receive-message', newMessage);
 
-      // 📣 Emit notification
       await prisma.notification.create({
         data: {
           userId: Number(recipientId),
           type: 'message.received',
           message: `New message from user ${userId}`,
           targetId: newMessage.id,
-          targetType: 'Message'
-        }
+          targetType: 'Message',
+        },
       });
 
       io.to(`user:${recipientId}`).emit('new-notification', {
         type: 'message.received',
         message: `New message from user ${userId}`,
         targetId: newMessage.id,
-        targetType: 'Message'
+        targetType: 'Message',
       });
 
       console.log(`📩 Message sent from ${userId} ➡️ ${recipientId}: "${content}"`);
     } catch (err) {
       console.error('💥 send-message error:', err.message);
-      socket.emit('error', { message: 'Failed to send message' });
     }
   });
 
-  // ✅ Acknowledge message as read
+  // ✅ Group join
+  socket.on('join-group', ({ groupId }) => {
+    socket.join(`group:${groupId}`);
+    console.log(`👥 User ${userId} joined group:${groupId}`);
+  });
+
+  // ✅ Group message
+  socket.on('send-group-message', async ({ groupId, content }) => {
+    try {
+      const message = await prisma.groupMessage.create({
+        data: {
+          senderId: userId,
+          groupId: Number(groupId),
+          content,
+        },
+      });
+
+      io.to(`group:${groupId}`).emit('receive-group-message', message);
+    } catch (err) {
+      console.error('💥 group-message error:', err.message);
+    }
+  });
+
+  // ✅ Group message read
+  socket.on('group-message-read', async ({ groupId, messageId }) => {
+    try {
+      await prisma.groupMessageRead.upsert({
+        where: {
+          userId_groupId: {
+            userId,
+            groupId: Number(groupId),
+          },
+        },
+        update: { readAt: new Date() },
+        create: {
+          userId,
+          groupId: Number(groupId),
+          readAt: new Date(),
+        },
+      });
+
+      socket.to(`group:${groupId}`).emit('group-message-read-confirmation', {
+        groupId,
+        messageId,
+        readBy: userId,
+      });
+
+      console.log(`👁️‍🗨️ Group message ${messageId} read by ${userId} in group ${groupId}`);
+    } catch (err) {
+      console.error('💥 group-message-read error:', err.message);
+    }
+  });
+
+  // 📬 Mark message as read
   socket.on('message-read', async ({ messageId }) => {
     try {
       const updated = await prisma.message.update({
         where: { id: Number(messageId) },
-        data: { isRead: true }
+        data: { isRead: true },
       });
 
       io.to(`user:${updated.senderId}`).emit('message-read-confirmation', {
         messageId: updated.id,
-        readAt: new Date()
+        readAt: new Date(),
       });
 
       console.log(`👁️ Message ${messageId} marked as read by ${userId}`);
@@ -158,71 +214,21 @@ socket.on('send-group-message', async ({ groupId, content }) => {
     }
   });
 
-  // 🟢 Typing indicator
+  // ✍️ Typing
   socket.on('typing', ({ recipientId }) => {
     io.to(`user:${recipientId}`).emit('user-typing', { senderId: userId });
   });
 
-  // 🔴 Stop typing indicator
   socket.on('stop-typing', ({ recipientId }) => {
     io.to(`user:${recipientId}`).emit('user-stop-typing', { senderId: userId });
   });
 
+  // 📴 Disconnect
   socket.on('disconnect', () => {
     console.log(`❌ User ${userId} disconnected from socket ${socket.id}`);
   });
 });
 
-socket.on('group-message-read', async ({ groupId, messageId }) => {
-  try {
-    await prisma.groupMessageRead.upsert({
-      where: {
-        userId_groupId: {
-          userId,
-          groupId: Number(groupId)
-        }
-      },
-      update: { readAt: new Date() },
-      create: {
-        userId,
-        groupId: Number(groupId),
-        readAt: new Date()
-      }
-    });
-
-    socket.to(`group:${groupId}`).emit('group-message-read-confirmation', {
-      groupId,
-      messageId,
-      readBy: userId
-    });
-
-    console.log(`👁️‍🗨️ Group message ${messageId} read by ${userId} in group ${groupId}`);
-  } catch (err) {
-    console.error('💥 group-message-read error:', err.message);
-  }
-});
-
-io.on('connection', (socket) => {
-  console.log(`🟢 User connected: ${socket.id}`);
-
-  socket.on('join-group', ({ groupId }) => {
-    socket.join(`group-${groupId}`);
-  });
-
-  socket.on('send-group-message', async ({ groupId, senderId, content }) => {
-    const message = await prisma.groupMessage.create({
-      data: { groupId, senderId, content },
-    });
-
-    io.to(`group-${groupId}`).emit('receive-group-message', message);
-  });
-
-  socket.on('disconnect', () => {
-    console.log(`🔴 User disconnected: ${socket.id}`);
-  });
-});
-
-// Start server
 server.listen(PORT, () => {
   console.log(`🚀 Beltmar server running on http://localhost:${PORT}`);
 });
