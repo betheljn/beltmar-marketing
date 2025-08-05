@@ -491,3 +491,11 @@ model Onboarding {
   enableTwitterAnalysis Boolean @default(false)
 }
 
+model ChatLog {
+  id        String   @id @default(uuid())
+  userId    String
+  message   String
+  aiReply   String
+  profile   Json
+  createdAt DateTime @default(now())
+}
